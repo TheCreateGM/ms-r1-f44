@@ -14,7 +14,7 @@ MS-R1 support on top.  Three layers are touched, and the distinction between
 them matters:
 
 | Layer | Path inside the ISO | What this build changes |
-| | --- | --- |
+| --- | --- | --- |
 | ISO 9660 / EFI | `/boot/...`, `/EFI/...` | new `linux-msr1` + `initrd-msr1`, new `grub.cfg` |
 | live root filesystem | `/LiveOS/squashfs.img` (EROFS) | extra kernel modules, udev rules, systemd units, tools, docs, NPU userspace, `kernel-msr1` RPM |
 | initramfs (ISO level) | `/boot/aarch64/loader/initrd-msr1` | MS-R1 module set + ACPI SSDT override |
