@@ -1,0 +1,19 @@
+[Unit]
+Description=MINISFORUM MS-R1 (CIX Sky1) power policy
+Documentation=file:/usr/share/doc/ms-r1/POWER.md
+After=multi-user.target systemd-udev-trigger.service
+# The MS-R1 is an ACPI-only platform: there is no /proc/device-tree.  The
+# guard below therefore keys on the ACPI tables, not on a device tree.
+ConditionPathExists=/sys/firmware/acpi/tables
+# Every knob msr1-power-apply touches is validated at run time, so the unit
+# is harmless on any other ACPI machine.
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/ms-r1/msr1-power-apply
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target

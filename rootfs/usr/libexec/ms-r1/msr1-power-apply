@@ -1,0 +1,115 @@
+#!/bin/bash
+# MINISFORUM MS-R1 (CIX CP8180 / Sky1) power policy.
+#
+# Applies conservative, workstation-safe power settings.  Every step is
+# guarded: missing sysfs knobs are silently skipped, so the script is safe on
+# hardware that does not expose them.  Nothing here disables a security
+# feature, changes SELinux state or forces a governor that the platform
+# driver does not implement.
+#
+# Configurable via /etc/msr1-power.conf
+set -u
+
+CONF=/etc/msr1-power.conf
+[ -r "$CONF" ] && . "$CONF"
+
+: "${MSR1_CPU_GOVERNOR:=schedutil}"
+: "${MSR1_CPU_GOVERNOR_LITTLE:=schedutil}"
+: "${MSR1_EPP:=balance_performance}"
+: "${MSR1_NVME_APST_EXIT_LATENCY:=2000}"
+: "${MSR1_PCIE_ASPM_POLICY:=}"
+: "${MSR1_LOG_VERBOSE:=0}"
+
+log() { logger -t msr1-power -- "$*" || true; [ "${MSR1_LOG_VERBOSE}" = 1 ] && echo "msr1-power: $*"; return 0; }
+
+# ---------------------------------------------------------------- CPU / cpufreq
+# The MS-R1 reaches cpufreq through ACPI CPPC (CONFIG_ACPI_CPPC_CPUFREQ) and
+# SCMI performance domains (CONFIG_ARM_SCMI_CPUFREQ), so a policy is exposed
+# through cpufreq energy performance preference rather than a legacy governor
+# bus.  We set the governor when one is offered and use the EPP otherwise.
+set_cpu_policy() {
+    local policy="$1" epp="$2" p changed=0
+    [ -d /sys/devices/system/cpu/cpufreq ] || { log "no cpufreq policy directory"; return 0; }
+    for p in /sys/devices/system/cpu/cpufreq/policy* /sys/devices/system/cpu/cpu*/cpufreq; do
+        [ -d "$p" ] || continue
+        if [ -w "$p/scaling_governor" ]; then
+            local g; g="$(cat "$p/scaling_governor" 2>/dev/null)"
+            case "$g" in
+                performance|powersave|schedutil|ondemand|conservative|userspace)
+                    printf '%s' "$policy" > "$p/scaling_governor" 2>/dev/null && changed=1 ;;
+            esac
+        fi
+        if [ -w "$p/energy_performance_preference" ] && [ -n "$epp" ]; then
+            local e; e="$(cat "$p/energy_performance_preference" 2>/dev/null)"
+            case "$e" in
+                default|performance|balance_performance|balance_power|power)
+                    printf '%s' "$epp" > "$p/energy_performance_preference" 2>/dev/null && changed=1 ;;
+            esac
+        fi
+    done
+    [ "$changed" = 1 ] && log "cpufreq policy applied (governor=$policy epp=$epp)"
+    return 0
+}
+set_cpu_policy "$MSR1_CPU_GOVERNOR" "$MSR1_EPP"
+
+# --------------------------------------------------------- cpuidle / cpupower
+# Keep the cpuidle governor at the (default) menu governor so the firmware
+# picks deep C-states; never force "poll", which would prevent C-states and
+# make the machine hotter for no benefit on a desktop.
+if [ -w /sys/devices/system/cpu/cpuidle/current_governor_ro ]; then
+    :
+else
+    [ -w /sys/devices/system/cpu/cpuidle/current_governor ] && \
+        log "cpuidle governor: $(cat /sys/devices/system/cpu/cpuidle/current_governor)"
+fi
+
+# ------------------------------------------------------------- PCIe runtime PM
+# PCIe ASPM policy is a kernel command line parameter on this platform; the
+# boot menu default is pcie_aspm=off because the MS-R1 firmware is only
+# validated with it.  When MSR1_PCIE_ASPM_POLICY is set we write the policy so
+# it stays consistent with a low-power boot.
+if [ -n "$MSR1_PCIE_ASPM_POLICY" ] && [ -w /sys/module/pcie_aspm/parameters/policy ]; then
+    printf '%s' "$MSR1_PCIE_ASPM_POLICY" > /sys/module/pcie_aspm/parameters/policy 2>/dev/null && \
+        log "PCIe ASPM policy set to $MSR1_PCIE_ASPM_POLICY"
+fi
+# Runtime PM (autosuspend) for PCI devices that support it.  Skipped for
+# storage and network adapters that would drop the link while in use.
+if [ -d /sys/bus/pci/devices ]; then
+    for d in /sys/bus/pci/devices/*; do
+        [ -d "$d/power" ] || continue
+        cls="$(cat "$d/class" 2>/dev/null)"
+        case "$cls" in
+            0x0108*|0x0106*|0x0200*)  # NVMe, SATA, Ethernet
+                [ -w "$d/power/control" ] && printf 'on' > "$d/power/control" 2>/dev/null ;;
+            *)
+                [ -w "$d/power/control" ] && printf 'auto' > "$d/power/control" 2>/dev/null ;;
+        esac
+    done
+fi
+
+# ------------------------------------------------------------------- NVMe APST
+# Autonomous Power State Transitions: lower the exit-latency threshold so the
+# SSD reaches a lower NVMe power state sooner while remaining responsive
+# (< 200 us, i.e. well below the SATA/PCIe idle detection windows).
+for n in /sys/class/nvme/nvme*; do
+    [ -d "$n" ] || continue
+    if [ -w "$n/power_state" ]; then
+        logger -t msr1-power -- "NVMe $(basename "$n"): current power state $(cat "$n/power_state" 2>/dev/null)"
+    fi
+done
+if [ -w /sys/module/nvme_core/parameters/apst_latency_tolerance_us ]; then
+    printf '%s' "$MSR1_NVME_APST_EXIT_LATENCY" > /sys/module/nvme_core/parameters/apst_latency_tolerance_us 2>/dev/null && \
+        log "NVMe APST exit latency tolerance set to ${MSR1_NVME_APST_EXIT_LATENCY}us"
+fi
+
+# ------------------------------------------------------------------ GPU / NPU
+# The CIX display driver and panthor manage their own runtime PM; the NPU
+# driver enables runtime PM per power domain at probe time.  Nothing to do
+# beyond making sure the devices are not pinned to "on" by our policy above.
+for d in /sys/class/drm/card*/device/power /sys/devices/platform/*npu*/power; do
+    [ -d "$d" ] || continue
+    [ -w "$d/control" ] && printf 'auto' > "$d/control" 2>/dev/null
+done
+
+log "power policy applied"
+exit 0

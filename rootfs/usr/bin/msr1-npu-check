@@ -1,0 +1,57 @@
+#!/bin/bash
+# Show the state of the MS-R1 NPU (CIX ZHOUYI V3 / ArmChina NPU).
+# Usage: msr1-npu-check [--smoke]
+#
+#   (no args)  report ACPI nodes, module, device node and UMD library state
+#   --smoke    additionally run the bundled NOE smoke test if a model is not
+#              required (only when the UMD ABI matches this kernel driver)
+set -u
+KMOD=$(uname -r)
+
+echo "MS-R1 NPU status (kernel $KMOD)"
+echo "-------------------------------------------"
+printf 'ACPI NPU controller (CIXH4000): '; ls -d /sys/bus/acpi/devices/CIXH4000:* 2>/dev/null || echo "absent"
+printf 'ACPI NPU cores      (CIXH4010): '; ls -d /sys/bus/acpi/devices/CIXH4010:* 2>/dev/null | tr '\n' ' ' || true; echo
+printf 'kernel module       (armchina_npu): '
+if lsmod | grep -q '^armchina_npu'; then echo "loaded"; else echo "not loaded"; fi
+printf 'character device    (/dev/aipu):  '
+if [ -e /dev/aipu ]; then ls -l /dev/aipu; else echo "absent"; fi
+printf 'NPU userspace (libnoe.so):        '
+if [ -r /usr/lib/ms-r1/npu/lib/libnoe.so ]; then
+    echo "present ($(stat -c%s /usr/lib/ms-r1/npu/lib/libnoe.so) bytes)"
+else
+    echo "absent"
+fi
+echo
+echo "Kernel messages:"
+dmesg 2>/dev/null | grep -iE 'aipu|armchina|npu|zhouyi' | tail -15 || echo "  (none - run as root to read the kernel ring buffer)"
+echo
+echo "Documentation: /usr/share/doc/ms-r1/NPU.md"
+
+if [ "${1:-}" = "--smoke" ]; then
+    echo
+    echo "Smoke test:"
+    if [ -e /dev/aipu ]; then
+        if head -c0 /dev/aipu 2>/dev/null; then
+            echo "  /dev/aipu      : openable by the current user"
+        else
+            echo "  /dev/aipu      : present but not accessible ($(ls -l /dev/aipu))"
+        fi
+    else
+        echo "  /dev/aipu      : absent - the driver did not bind (see above)"
+    fi
+    if command -v python3 >/dev/null && [ -r /usr/lib/ms-r1/npu/lib/libnoe.so ]; then
+        if python3 - <<'PY' 2>&1 | sed 's/^/  libnoe.so     : /'
+import ctypes, sys
+try:
+    ctypes.CDLL("/usr/lib/ms-r1/npu/lib/libnoe.so")
+    print("loaded, all shared library dependencies resolved")
+except OSError as e:
+    print("NOT loadable:", e); sys.exit(1)
+PY
+        then :; fi
+    fi
+    echo
+    echo "Run 'journalctl -b -k | grep -iE \"aipu|npu\"' for driver level detail."
+fi
+exit 0

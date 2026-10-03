@@ -1,0 +1,28 @@
+# MINISFORUM MS-R1 power policy (CIX CP8180 / Sky1)
+#
+# Conservative desktop power management.  Only measures that are safe on a
+# workstation and supported by the MS-R1 kernel (6.19.10-300.fc44.msr1, built
+# with the CIX Sky1 patch set) are applied here:
+#
+#  * USB: Fedora's 60-autosuspend.rules already switches USB devices to
+#    runtime autosuspend.  We raise the idle delay from the 2 s default to
+#    60 s so that mice/keyboards do not drop the link while in use, while
+#    still saving power on an idle desktop.
+#  * Hubs, USB mass-storage devices and every block device stay powered:
+#    autosuspending the medium we booted from or run from is a classic source
+#    of "card reader disappeared" / "root device timed out" bugs.
+#  * PCIe ASPM is intentionally NOT forced here - the MS-R1 firmware/kernel
+#    combination is validated with pcie_aspm=off (see the boot menu).  A
+#    dedicated "low power" boot entry enables ASPM for users who want it.
+#  * NVMe APST is a kernel default; msr1-power.service lowers the power state
+#    exit-latency threshold so the SSD drops to a lower power state sooner.
+
+# 60 s idle before an idle USB peripheral is suspended (runtime PM stays on)
+ACTION=="add|change", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{power/autosuspend_delay_ms}="60000"
+
+# hubs must stay awake, otherwise peripherals behind them lose link
+ACTION=="add|change", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{bDeviceClass}=="09", ATTR{power/control}="on"
+
+# USB mass storage: keep the boot/installation medium awake
+ACTION=="add|change", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{bInterfaceClass}=="08", ATTR{power/control}="on"
+ACTION=="add|change", SUBSYSTEM=="block", ATTR{power/control}="on"

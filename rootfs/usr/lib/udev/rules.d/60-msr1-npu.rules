@@ -1,0 +1,7 @@
+# MINISFORUM MS-R1 - CIX ZHOUYI V3 NPU (ArmChina NPU) device permissions
+#
+# The armchina-npu driver registers a misc character device named "aipu"
+# (drivers/misc/armchina-npu/aipu_priv.c).  Allow the desktop session and
+# non-root tooling to use the accelerator.
+ACTION=="add|change", KERNEL=="aipu", SUBSYSTEM=="misc", MODE="0660", GROUP="video", TAG+="uaccess"
+ACTION=="add|change", KERNEL=="aipu[0-9]*", SUBSYSTEM=="misc", MODE="0660", GROUP="video", TAG+="uaccess"

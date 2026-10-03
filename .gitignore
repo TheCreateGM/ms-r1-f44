@@ -1,0 +1,38 @@
+# Build artefacts (the ISOs are ~3-4 GB each; keep them out of VCS)
+*.iso
+*.iso.sha256
+*.rpm
+*.ko
+*.ko.xz
+*.o
+*.o.xz
+*.img
+*.cpio
+*.zst
+
+# The whole build workspace
+work/
+
+# Generated kernel artefacts
+out/
+logs/
+
+# Build host state
+rpmbuild/
+stage/
+extracts/
+iso-base/
+ref/
+
+# Compiled ACPI table (the .asl source in acpi/ is tracked)
+acpi/ssdt-msr1-npu-core-hid.aml
+
+# Editor / OS cruft
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Vendor source archives (23 GB of raw material; not part of the build)
+*.zip
+*.7z

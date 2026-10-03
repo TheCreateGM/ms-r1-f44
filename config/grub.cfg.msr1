@@ -1,0 +1,77 @@
+# Boot menu for Fedora-Workstation-Live-44-1.7-MS-R1.aarch64.iso
+#
+# Based on the configuration shipped by Fedora (boot/grub2/grub.cfg of
+# Fedora-Workstation-Live-44-1.7.aarch64.iso), extended with the MINISFORUM
+# MS-R1 entries.  Every parameter used here is documented in
+# /usr/share/doc/ms-r1/HARDWARE.md.
+
+# Inspired by the config used for lorax-built live media
+
+set default="0"
+
+function load_video {
+	insmod efi_gop
+	insmod efi_uga
+	insmod video_bochs
+	insmod video_cirrus
+	insmod all_video
+}
+set basicgfx="nomodeset"
+
+load_video
+set gfxpayload=keep
+insmod gzio
+insmod part_gpt
+insmod ext2
+
+terminal_input console
+terminal_output console
+
+set timeout=10
+set timeout_style=menu
+
+search --file --set=root /boot/0x503d6c7e
+
+# ---------------------------------------------------------------- MS-R1 (CIX)
+menuentry "Fedora Workstation Live (MS-R1 / CIX Sky1)" --class fedora --class gnu-linux --class gnu --class os {
+	linux ($root)/boot/aarch64/loader/linux-msr1 root=live:CDLABEL=@VOLID@ rd.live.image @ARGS@ quiet rhgb
+	initrd ($root)/boot/aarch64/loader/initrd-msr1
+}
+menuentry "Fedora Workstation Live (MS-R1 / CIX Sky1, verbose)" --class fedora --class gnu-linux --class gnu --class os {
+	linux ($root)/boot/aarch64/loader/linux-msr1 root=live:CDLABEL=@VOLID@ rd.live.image @ARGS@ rd.debug shell
+	initrd ($root)/boot/aarch64/loader/initrd-msr1
+}
+menuentry "Fedora Workstation Live (MS-R1 / CIX Sky1, low power)" --class fedora --class gnu-linux --class gnu --class os {
+	linux ($root)/boot/aarch64/loader/linux-msr1 root=live:CDLABEL=@VOLID@ rd.live.image @LOWPWR@ quiet rhgb
+	initrd ($root)/boot/aarch64/loader/initrd-msr1
+}
+
+# ------------------------------------------------ generic ARM64 (stock kernel)
+menuentry "Fedora Workstation Live (stock Fedora aarch64 kernel)" --class fedora --class gnu-linux --class gnu --class os {
+	linux ($root)/boot/aarch64/loader/linux quiet rhgb  root=live:CDLABEL=@VOLID@ rd.live.image
+	initrd ($root)/boot/aarch64/loader/initrd
+}
+menuentry "Test this media & start Fedora-Workstation-Live" --class fedora --class gnu-linux --class gnu --class os {
+	linux ($root)/boot/aarch64/loader/linux quiet rhgb  root=live:CDLABEL=@VOLID@ rd.live.image rd.live.check
+	initrd ($root)/boot/aarch64/loader/initrd
+}
+
+submenu "Troubleshooting -->" {
+	menuentry "Start Fedora-Workstation-Live in basic graphics mode" --class fedora --class gnu-linux --class gnu --class os {
+		linux ($root)/boot/aarch64/loader/linux quiet rhgb  root=live:CDLABEL=@VOLID@ rd.live.image ${basicgfx}
+		initrd ($root)/boot/aarch64/loader/initrd
+	}
+	menuentry "MS-R1 kernel, basic graphics mode (nomodeset)" --class fedora --class gnu-linux --class gnu --class os {
+		linux ($root)/boot/aarch64/loader/linux-msr1 root=live:CDLABEL=@VOLID@ rd.live.image @ARGS@ ${basicgfx}
+		initrd ($root)/boot/aarch64/loader/initrd-msr1
+	}
+	menuentry "MS-R1 kernel, rescue shell" --class fedora --class gnu-linux --class gnu --class os {
+		linux ($root)/boot/aarch64/loader/linux-msr1 root=live:CDLABEL=@VOLID@ rd.live.image rd.break=pre-mount @ARGS@
+		initrd ($root)/boot/aarch64/loader/initrd-msr1
+	}
+}
+# NOTE: this ISO carries no anaconda kernel (there is no /images directory),
+# so installation is started from the running live session with
+#     sudo anaconda --kickstart=/usr/share/ms-r1/kernel-msr1.ks
+# and the kickstart installs the kernel-msr1 RPM that ships in
+# /usr/share/ms-r1/kernel/.  See /usr/share/doc/ms-r1/BUILD.md.

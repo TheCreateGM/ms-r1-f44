@@ -1,0 +1,1 @@
+console=tty0 console=ttyAMA0,115200n8 pcie_aspm=off cma=512M clk_ignore_unused=1 cpufreq.default_governor=schedutil

@@ -1,0 +1,56 @@
+#!/bin/bash
+# MINISFORUM MS-R1 - load and validate the CIX ZHOUYI V3 NPU.
+#
+# The ArmChina Zhouyi NPU driver (armchina_npu, drivers/misc/armchina-npu)
+# registers a platform driver with the ACPI HID "CIXH4000" and a misc
+# character device /dev/aipu.  udev normally autoloads it through
+# MODULE_DEVICE_TABLE(acpi, ...); this unit makes the load explicit and logs a
+# clear status line so the state of the accelerator is visible without having
+# to know the driver internals.
+#
+# On firmware that does not describe the NPU in ACPI (the original 2025-10
+# BIOS build 1.0) the module simply does not bind; that is reported, not
+# treated as an error.  See /usr/share/doc/ms-r1/NPU.md.
+set -u
+
+log() { logger -t msr1-npu -- "$*"; echo "msr1-npu: $*" >/dev/console 2>/dev/null || true; }
+
+# The per-core power domains are only found when the DSDT children carry an
+# _HID; our initramfs adds them through an SSDT override.  If they are still
+# missing, probe fails with a NULL pm_runtime_enable() oops, so we only load
+# the module when the cores are actually enumerable.
+# The driver's lookup is
+#     bus_find_device_by_fwnode(&platform_bus_type, <CRE child fwnode>)
+# so a core is only usable when the ACPI device exists *and* the ACPI bus has
+# enrolled it onto the platform bus.  Check both.
+cores_ok=0
+for n in 0 1 2; do
+    if [ -d "/sys/bus/acpi/devices/CIXH4010:0$n" ] && \
+       [ -d "/sys/bus/platform/devices/CIXH4010:0$n" ]; then cores_ok=1; fi
+done
+
+if [ "$cores_ok" = 0 ]; then
+    if [ -d /sys/bus/acpi/devices ] && ls /sys/bus/acpi/devices | grep -q '^CIXH4000'; then
+        log "NPU controller CIXH4000 present but its 3 core devices (CIXH4010) are not enumerable."
+        log "The ACPI SSDT override did not apply - check that the initramfs contains"
+        log "/kernel/firmware/acpi/ssdt-msr1-npu-core-hid.aml. Skipping module load to avoid an oops."
+        exit 0
+    fi
+    log "No CIX NPU (ACPI HID CIXH4000) found. This firmware does not expose the NPU;"
+    log "flash the 2026-04-29 'UpdateNPUSupport' BIOS to enable it (see /usr/share/doc/ms-r1/NPU.md)."
+    exit 0
+fi
+
+if ! modprobe armchina_npu 2>/dev/null; then
+    log "armchina_npu module is not present in this kernel - NPU support unavailable."
+    exit 0
+fi
+
+if [ -e /dev/aipu ]; then
+    chgrp video /dev/aipu 2>/dev/null
+    chmod 0660 /dev/aipu 2>/dev/null
+    log "NPU ready: /dev/aipu present, $(ls -l /dev/aipu 2>/dev/null)"
+else
+    log "NPU driver loaded but /dev/aipu is missing - probe failed, see 'journalctl -k -b | grep -i npu'."
+fi
+exit 0

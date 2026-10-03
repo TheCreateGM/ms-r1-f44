@@ -1,0 +1,45 @@
+#!/bin/bash
+# Summary of detected MINISFORUM MS-R1 / CIX Sky1 hardware under this Fedora
+# live system.  Useful to attach to bug reports.
+set -u
+echo "=== Platform"
+printf 'board   : %s\n' "$(cat /sys/devices/virtual/dmi/id/board_name 2>/dev/null || echo unknown)"
+printf 'vendor  : %s\n' "$(cat /sys/devices/virtual/dmi/id/sys_vendor 2>/dev/null || echo unknown)"
+printf 'kernel  : %s (%s)\n' "$(uname -r)" "$(uname -m)"
+printf 'os      : %s\n' "$(. /etc/os-release; echo "$PRETTY_NAME")"
+
+echo
+echo "=== CPU"
+lscpu 2>/dev/null | grep -E 'Model name|Architecture|CPU\(s\)|Thread|Core|BogoMIPS|Max MHz|min MHz' || true
+for f in /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor \
+         /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq \
+         /sys/devices/system/cpu/cpu0/cpufreq/energy_performance_preference; do
+    [ -r "$f" ] && printf '%-58s %s\n' "$f" "$(cat "$f")"
+done
+
+echo
+echo "=== PCIe / NVMe"
+lspci -nn 2>/dev/null | head -30 || echo "(lspci unavailable)"
+for n in /sys/class/nvme/nvme*; do [ -d "$n" ] || continue; echo "NVMe $(basename "$n"): $(cat "$n/model" 2>/dev/null)"; done
+
+echo
+echo "=== Graphics"
+ls -l /dev/dri 2>/dev/null || echo "no DRM devices"
+for c in /sys/class/drm/card*/device/uevent; do [ -r "$c" ] && cat "$c"; done 2>/dev/null | grep -E 'DRIVER|PCI_ID' || true
+
+echo
+echo "=== Network"
+nmcli -t -f DEVICE,TYPE,STATE,CONNECTION device 2>/dev/null || ip -br link 2>/dev/null
+for n in /sys/class/net/*/wireless; do [ -d "$n" ] && echo "wireless: $(basename $(dirname $n))"; done
+
+echo
+echo "=== USB / audio / NPU"
+lsusb 2>/dev/null | head -20 || true
+aplay -l 2>/dev/null | head -10 || true
+msr1-npu-check 2>/dev/null | head -12 || true
+
+echo
+echo "=== Power policy"
+systemctl is-enabled msr1-power.service msr1-npu.service 2>/dev/null
+journalctl -t msr1-power -n 10 --no-pager 2>/dev/null || true
+exit 0

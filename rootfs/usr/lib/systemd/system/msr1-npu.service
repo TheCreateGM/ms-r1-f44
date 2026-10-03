@@ -1,0 +1,16 @@
+[Unit]
+Description=MINISFORUM MS-R1 CIX ZHOUYI NPU support
+Documentation=file:/usr/share/doc/ms-r1/NPU.md
+After=systemd-udev-trigger.service
+Before=graphical.target
+ConditionPathExists=/sys/firmware/acpi/tables
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/ms-r1/msr1-npu-start
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target
